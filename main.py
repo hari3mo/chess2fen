@@ -88,19 +88,19 @@ def detect_turn(board, debug=False):
 
     return highlighted
     
-def debug_highlight_output(board_image, highlighted, square_size):
+def debug_highlight_output(board, highlighted, square_size):
     for rank in range(8):
         for file in range(8):
             if highlighted[rank][file]:
                 x = file * square_size
                 y = rank * square_size
                 cv2.rectangle(
-                    board_image,
+                    board,
                     (x, y),
                     (x + square_size, y + square_size),
                     (0, 0, 255),
                     3)
-    debug_output(board_image, "highlights_detected.png")
+    debug_output(board, "highlights_detected.png")
 
 def debug_output(image, filename):
     path = os.path.join('./debug', filename)
