@@ -1,3 +1,4 @@
+import PIL
 import numpy as np
 import cv2
 import os
@@ -10,11 +11,11 @@ COLOR_TOLERANCE = 25
 HIGHLIGHT_TOLERANCE = 40
 HIGHLIGHT_THRESHOLD = 0.1
 
-PIECE_CODES = ["wk", "wq", "wr", "wb", "wn", "wp",
-               "bk", "bq", "br", "bb", "bn", "bp"]
+PIECE_CODES = ['wk', 'wq', 'wr', 'wb', 'wn', 'wp',
+               'bk', 'bq', 'br', 'bb', 'bn', 'bp']
 
-EMPTY_THRESHOLD = 15
-MATCH_THRESHOLD = 0.9
+EMPTY_THRESHOLD = 35
+MATCH_THRESHOLD = 0.70
 
 def load_screenshot(path):
     img = cv2.imread(path)
@@ -66,9 +67,8 @@ def crop_board(screenshot, region, debug=False):
 
     return cropped
 
-def detect_turn(board, debug=False):
+def detect_turn(board, square_size, debug=False):
     highlighted = [[False] * 8 for i in range(8)]
-
     for rank in range(8):
         for file in range(8):
             x = file * square_size
@@ -97,7 +97,7 @@ def load_pieces():
     templates = {}
 
     for piece in PIECE_CODES:
-        file_path = os.path.join('./templates/pieces', f"{piece}.png")
+        file_path = os.path.join('./templates/pieces', f'{piece}.png')
         img = cv2.imread(file_path, cv2.IMREAD_UNCHANGED)
 
         color = img[:, :, 0:3]
@@ -111,6 +111,53 @@ def load_pieces():
         templates[piece] = (color_resized, mask_resized)
 
     return templates
+
+def classify_all_squares(board, templates, debug=False):
+    grid = [[None] * 8 for i in range(8)]
+    for rank_index in range(8):
+        for file_index in range(8):
+            x = file_index * square_size
+            y = rank_index * square_size
+            square = board[y:y + square_size, x:x + square_size]
+
+            best_piece = None
+            best_score = -1.0
+
+            for piece, (template_img, template_mask) in templates.items():
+                result = cv2.matchTemplate(square, template_img, cv2.TM_CCOEFF_NORMED, mask=template_mask)
+                score = result[0][0]
+                if score > best_score:
+                    best_score = score
+                    best_piece = piece
+
+            std = square.std()
+
+            if std < EMPTY_THRESHOLD and best_score < MATCH_THRESHOLD:
+                best_piece = None
+            print(f"rank {rank_index}, file {file_index}: best: {best_piece} score={best_score:.3f} (std={std:.1f})")
+                
+            grid[rank_index][file_index] = best_piece
+
+    if debug:
+        debug_classification_output(board, grid)
+
+    return grid
+
+def debug_classification_output(board_image, grid):
+    annotated = board_image.copy()
+    for rank_index in range(8):
+        for file_index in range(8):
+            code = grid[rank_index][file_index]
+            if code is None:
+                continue
+            x = file_index * square_size
+            y = rank_index * square_size
+            cv2.putText(
+                annotated,code,
+                (x + 5, y + 20),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,(0, 0, 255),2)
+    debug_output(annotated, "classification.png")
 
 def debug_highlight_output(board, highlighted):
     for rank in range(8):
@@ -129,12 +176,12 @@ def debug_output(image, filename):
     return path
 
 if __name__ == "__main__":
-    # screenshot = load_screenshot('./templates/board.png')
-    screenshot = load_screenshot('sss.png')
+    screenshot = load_screenshot('./templates/starting.png')
     region = detect_board(screenshot, debug=True)
+    print("Detected board region (x, y, w, h):", region)
     board = crop_board(screenshot, region, debug=True)
     square_size = board.shape[0] // 8
-    highlighted = detect_turn(board, debug=True)
+    highlighted = detect_turn(board, square_size, debug=True)
     pieces = load_pieces()
-    print(pieces)
-    print("Detected board region (x, y, w, h):", region)
+    grid = classify_all_squares(board, pieces, debug=True)
+    print(grid)
