@@ -1,92 +1,109 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // --- 1. UI Element Selectors ---
     const dropZone = document.getElementById('drop-zone');
     const fileInput = document.getElementById('file-input');
-
-    // UI Panels
     const promptView = document.getElementById('drop-zone-prompt');
     const processingView = document.getElementById('processing-view');
     const resultView = document.getElementById('result-view');
-
-    // Result Elements
     const imagePreview = document.getElementById('image-preview');
     const fenOutput = document.getElementById('fen-output');
     const copyBtn = document.getElementById('copy-btn');
     const resetBtn = document.getElementById('reset-btn');
     const lichessLink = document.getElementById('lichess-link');
-
-    // Eval Bar Elements
     const evalFill = document.getElementById('eval-fill');
     const evalLabel = document.getElementById('eval-label');
 
-    // --- 1. File Input Methods ---
+    // --- 2. Stockfish.js Engine Setup ---
+    // Initialize the engine as a Web Worker to keep the UI responsive
+    const stockfish = new Worker('stockfish-18-lite-single.js');
+    let currentEval = 0;
 
-    // A. Drag & Drop
-    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-        dropZone.addEventListener(eventName, e => {
-            e.preventDefault();
-            e.stopPropagation();
-        }, false);
+    // Listen for engine messages (UCI Protocol)
+    stockfish.onmessage = function (event) {
+        const line = event.data;
+
+        // Parse evaluation: "info depth 15 ... score cp 120 ..."
+        if (line.includes('score')) {
+            const scoreMatch = line.match(/score (cp|mate) (-?\d+)/);
+            if (scoreMatch) {
+                const type = scoreMatch[1]; // 'cp' (centipawns) or 'mate'
+                const value = parseInt(scoreMatch[2]);
+
+                let displayScore;
+                if (type === 'cp') {
+                    currentEval = value / 100;
+                    displayScore = (currentEval > 0 ? "+" : "") + currentEval.toFixed(2);
+                } else {
+                    // Handle Mate-in-N
+                    currentEval = value > 0 ? 10000 : -10000;
+                    displayScore = (value > 0 ? "+M" : "-M") + Math.abs(value);
+                }
+
+                updateEvalBar(displayScore, currentEval);
+            }
+        }
+    };
+
+    // Initialize the engine
+    stockfish.postMessage('uci');
+
+    // --- 3. File Input Handlers ---
+
+    // Drag & Drop
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eName => {
+        dropZone.addEventListener(eName, e => { e.preventDefault(); e.stopPropagation(); }, false);
     });
 
-    ['dragenter', 'dragover'].forEach(eventName => {
-        dropZone.addEventListener(eventName, () => dropZone.classList.add('dragging'), false);
+    ['dragenter', 'dragover'].forEach(eName => {
+        dropZone.addEventListener(eName, () => dropZone.classList.add('dragging'), false);
     });
 
-    ['dragleave', 'drop'].forEach(eventName => {
-        dropZone.addEventListener(eventName, () => dropZone.classList.remove('dragging'), false);
+    ['dragleave', 'drop'].forEach(eName => {
+        dropZone.addEventListener(eName, () => dropZone.classList.remove('dragging'), false);
     });
 
     dropZone.addEventListener('drop', (e) => handleFiles(e.dataTransfer.files), false);
 
-    // B. Click to Browse
-    fileInput.addEventListener('change', function () {
-        handleFiles(this.files);
-    });
+    // Click to Browse
+    fileInput.addEventListener('change', function () { handleFiles(this.files); });
 
-    // C. Paste from Clipboard (Ctrl+V)
+    // Paste from Clipboard (Ctrl+V)
     document.addEventListener('paste', (e) => {
         if (e.clipboardData && e.clipboardData.files && e.clipboardData.files.length > 0) {
             handleFiles(e.clipboardData.files);
         }
     });
 
-    // --- 2. Core Processing ---
-
     function handleFiles(files) {
         if (files.length === 0) return;
         const file = files[0];
-
         if (!file.type.startsWith('image/')) {
             alert('Please provide an image file.');
             return;
         }
-
         processFile(file);
     }
+
+    // --- 4. Processing & Backend Communication ---
 
     function processFile(file) {
         showPanel(processingView);
 
-        // Load immediate image preview locally so the user sees what they pasted
+        // Load local preview immediately
         const reader = new FileReader();
         reader.readAsDataURL(file);
-        reader.onloadend = () => {
-            imagePreview.src = reader.result;
-        };
+        reader.onloadend = () => { imagePreview.src = reader.result; };
 
-        // Package the file to send to Python
         const formData = new FormData();
         formData.append('image', file);
 
-        // Send the file to your Flask API
+        // Send to Flask for Image-to-FEN conversion only
         fetch('/analyze', {
             method: 'POST',
             body: formData
         })
             .then(response => {
-                if (!response.ok) {
-                    throw new Error('Network response was not ok');
-                }
+                if (!response.ok) throw new Error('Server error');
                 return response.json();
             })
             .then(data => {
@@ -94,46 +111,38 @@ document.addEventListener('DOMContentLoaded', () => {
                     alert("Error: " + data.error);
                     showPanel(promptView);
                 } else {
-                    // Successfully got the real data back!
+                    // 1. Show Result UI
+                    showResult(data.fen);
 
-                    // Format the evaluation number (e.g., 1.5 -> "+1.50")
-                    let evalStr = "";
-                    if (data.evaluation >= 9000) {
-                        evalStr = "+M";
-                    } else if (data.evaluation <= -9000) {
-                        evalStr = "-M";
-                    } else {
-                        evalStr = (data.evaluation > 0 ? "+" : "") + data.evaluation.toFixed(2);
-                    }
-
-                    // Update the preview to the cropped version from the server
+                    // 2. Update to the cropped version from server
                     imagePreview.src = `/debug/cropped_board.png?t=${new Date().getTime()}`;
 
-                    // Update the UI with the real FEN and Eval
-                    showResult(data.fen, evalStr, data.evaluation);
+                    // 3. Trigger Browser-Side Stockfish Analysis
+                    stockfish.postMessage('ucinewgame');
+                    stockfish.postMessage(`position fen ${data.fen}`);
+                    stockfish.postMessage('go depth 15');
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
-                alert('Error connecting to backend. Check your server console.');
+                alert('Error connecting to backend.');
                 showPanel(promptView);
             });
     }
 
-    // --- 3. UI Updates ---
+    // --- 5. UI Updates ---
 
-    function showResult(fenString, evalStr, evalNumber) {
+    function showResult(fenString) {
         showPanel(resultView);
-
-        // Populate FEN
         fenOutput.value = fenString;
 
-        // Populate Lichess Link (replace spaces with underscores)
+        // Update Lichess Link
         const formattedFen = fenString.replace(/ /g, '_');
         lichessLink.href = `https://lichess.org/analysis/standard/${formattedFen}`;
 
-        // Populate Eval Bar
-        updateEvalBar(evalStr, evalNumber);
+        // Reset eval bar while engine starts thinking
+        evalLabel.textContent = "Calculating...";
+        evalFill.style.height = `50%`;
     }
 
     function updateEvalBar(scoreStr, scoreInPawns) {
@@ -141,11 +150,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let whitePercentage = 50;
 
-        // Handle Mate
         if (scoreStr.includes('M')) {
             whitePercentage = scoreStr.startsWith('-') ? 0 : 100;
         } else {
-            // Standard evaluation using sigmoid math
+            // Sigmoid math to map pawn advantage to a percentage (0-100%)
             const winProb = 1 / (1 + Math.exp(-(scoreInPawns * 100) / 400));
             whitePercentage = winProb * 100;
         }
@@ -154,18 +162,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function showPanel(panelToShow) {
-        [promptView, processingView, resultView].forEach(panel => {
-            panel.classList.add('hidden');
-        });
+        [promptView, processingView, resultView].forEach(p => p.classList.add('hidden'));
         panelToShow.classList.remove('hidden');
     }
 
-    // --- 4. Interactivity ---
+    // --- 6. Interactivity ---
 
     copyBtn.addEventListener('click', (e) => {
         e.preventDefault();
-        fenOutput.select();
-        document.execCommand('copy');
+        navigator.clipboard.writeText(fenOutput.value);
         copyBtn.textContent = 'Copied!';
         setTimeout(() => copyBtn.textContent = 'Copy', 2000);
     });
@@ -175,10 +180,10 @@ document.addEventListener('DOMContentLoaded', () => {
         fileInput.value = '';
         imagePreview.src = '';
         fenOutput.value = '';
+        // Stop any ongoing engine calculations
+        stockfish.postMessage('stop');
         showPanel(promptView);
     });
 
-    lichessLink.addEventListener('click', (e) => {
-        e.stopPropagation(); // Don't trigger the file input label click
-    });
+    lichessLink.addEventListener('click', (e) => e.stopPropagation());
 });

@@ -2,3 +2,4 @@
 notebook.ipynb
 env/
 images/
+__pycache__/

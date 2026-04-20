@@ -1,8 +1,8 @@
 import pandas as pd
 import numpy as np
-import chess.engine
-import chess
-import math
+# import chess.engine
+# import chess
+# import math
 import cv2
 import os
 
@@ -293,41 +293,39 @@ def debug_output(image, filename):
     cv2.imwrite(path, image)
     return path
 
-def render_eval_bar(fen, width=40):
-    board = chess.Board(fen)
+# def render_eval_bar(fen, width=40):
+#     board = chess.Board(fen)
 
-    with chess.engine.SimpleEngine.popen_uci('stockfish') as engine:
-        info = engine.analyse(board, chess.engine.Limit(depth=15))
-        score = info["score"].white()
+#     with chess.engine.SimpleEngine.popen_uci('stockfish') as engine:
+#         info = engine.analyse(board, chess.engine.Limit(depth=15))
+#         score = info["score"].white()
 
-        if score.is_mate():
-            # Convert mate-in-N to a very large number
-            mate_in = score.mate()
-            return 10000 if mate_in > 0 else -10000
+#         if score.is_mate():
+#             # Convert mate-in-N to a very large number
+#             mate_in = score.mate()
+#             return 10000 if mate_in > 0 else -10000
 
-    eval = score.score()
-    fraction = 1 / (1 + math.exp(-eval / 400))
+#     eval = score.score()
+#     fraction = 1 / (1 + math.exp(-eval / 400))
 
-    # Position of the fill boundary, from 0 (all black) to width (all white)
-    fill = int(fraction * width)
-    center = width // 2
+#     # Position of the fill boundary, from 0 (all black) to width (all white)
+#     fill = int(fraction * width)
+#     center = width // 2
 
-    bar = list(" " * width)
+#     bar = list(" " * width)
 
-    # Fill from center outward in the direction of the advantage
-    if fill > center:
-        for i in range(center, fill):
-            bar[i] = "="
-    else:
-        for i in range(fill, center):
-            bar[i] = "="
+#     # Fill from center outward in the direction of the advantage
+#     if fill > center:
+#         for i in range(center, fill):
+#             bar[i] = "="
+#     else:
+#         for i in range(fill, center):
+#             bar[i] = "="
 
-    bar[center] = "|"
+#     bar[center] = "|"
 
-    label = f"{eval / 100:+.2f}"
-    return f"[{''.join(bar)}] {label}"
-
-
+#     label = f"{eval / 100:+.2f}"
+#     return f"[{''.join(bar)}] {label}"
 
 
 if __name__ == '__main__':
@@ -346,4 +344,4 @@ if __name__ == '__main__':
     print(df)
     fen = build_fen(grid, highlighted)
     print('FEN:', fen)
-    print(render_eval_bar(fen))
+    # print(render_eval_bar(fen))
