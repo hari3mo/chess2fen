@@ -166,6 +166,15 @@ document.addEventListener('DOMContentLoaded', () => {
         panelToShow.classList.remove('hidden');
     }
 
+    const uploadBtn = document.querySelector('.upload-btn');
+
+    // Manual trigger for the hidden file input
+    uploadBtn.addEventListener('click', (e) => {
+        e.preventDefault(); // Prevent potential label conflicts
+        e.stopPropagation(); // Stop the event from bubbling
+        fileInput.click();
+    });
+
     // --- 6. Interactivity ---
 
     copyBtn.addEventListener('click', (e) => {
