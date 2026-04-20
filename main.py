@@ -14,7 +14,7 @@ HIGHLIGHT_THRESHOLD = 0.1
 PIECE_CODES = ['wk', 'wq', 'wr', 'wb', 'wn', 'wp',
                'bk', 'bq', 'br', 'bb', 'bn', 'bp']
 
-EMPTY_THRESHOLD = 35
+EMPTY_THRESHOLD = 60
 MATCH_THRESHOLD = 0.70
 
 def load_screenshot(path):
@@ -67,7 +67,7 @@ def crop_board(screenshot, region, debug=False):
 
     return cropped
 
-def detect_turn(board, square_size, debug=False):
+def detect_turn(board, debug=False):
     highlighted = [[False] * 8 for i in range(8)]
     for rank in range(8):
         for file in range(8):
@@ -181,12 +181,13 @@ def debug_output(image, filename):
     return path
 
 if __name__ == "__main__":
-    screenshot = load_screenshot('./templates/starting.png')
+    # screenshot = load_screenshot('./templates/starting.png')
+    screenshot = load_screenshot('ssss.png')
     region = detect_board(screenshot, debug=True)
     print("Detected board region (x, y, w, h):", region)
     board = crop_board(screenshot, region, debug=True)
     square_size = board.shape[0] // 8
-    highlighted = detect_turn(board, square_size, debug=True)
+    highlighted = detect_turn(board,debug=True)
     pieces = load_pieces()
     grid = classify_all_squares(board, pieces, debug=True)
     df = pd.DataFrame(grid)
