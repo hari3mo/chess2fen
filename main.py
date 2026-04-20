@@ -10,6 +10,12 @@ COLOR_TOLERANCE = 25
 HIGHLIGHT_TOLERANCE = 40
 HIGHLIGHT_THRESHOLD = 0.1
 
+PIECE_CODES = ["wk", "wq", "wr", "wb", "wn", "wp",
+               "bk", "bq", "br", "bb", "bn", "bp"]
+
+EMPTY_THRESHOLD = 15
+MATCH_THRESHOLD = 0.9
+
 def load_screenshot(path):
     img = cv2.imread(path)
 
@@ -61,8 +67,7 @@ def crop_board(screenshot, region, debug=False):
     return cropped
 
 def detect_turn(board, debug=False):
-    square_size = board.shape[0] // 8
-    highlighted = [[False] * 8 for _ in range(8)]
+    highlighted = [[False] * 8 for i in range(8)]
 
     for rank in range(8):
         for file in range(8):
@@ -84,22 +89,38 @@ def detect_turn(board, debug=False):
                 highlighted[rank][file] = True
 
     if debug:
-        debug_highlight_output(board, highlighted, square_size)
+        debug_highlight_output(board, highlighted)
 
     return highlighted
-    
-def debug_highlight_output(board, highlighted, square_size):
+
+def load_pieces():
+    templates = {}
+
+    for piece in PIECE_CODES:
+        file_path = os.path.join('./templates/pieces', f"{piece}.png")
+        img = cv2.imread(file_path, cv2.IMREAD_UNCHANGED)
+
+        color = img[:, :, 0:3]
+        alpha = img[:, :, 3]
+
+        _, mask = cv2.threshold(alpha, 0, 255, cv2.THRESH_BINARY)
+        color_resized = cv2.resize(color, (square_size, square_size),
+                                    interpolation=cv2.INTER_AREA)
+        mask_resized = cv2.resize(mask, (square_size, square_size),
+                                   interpolation=cv2.INTER_AREA)
+        templates[piece] = (color_resized, mask_resized)
+
+    return templates
+
+def debug_highlight_output(board, highlighted):
     for rank in range(8):
         for file in range(8):
             if highlighted[rank][file]:
                 x = file * square_size
                 y = rank * square_size
-                cv2.rectangle(
-                    board,
-                    (x, y),
+                cv2.rectangle(board,(x, y),
                     (x + square_size, y + square_size),
-                    (0, 0, 255),
-                    3)
+                    (0, 0, 255),3)
     debug_output(board, "highlights_detected.png")
 
 def debug_output(image, filename):
@@ -112,6 +133,8 @@ if __name__ == "__main__":
     screenshot = load_screenshot('sss.png')
     region = detect_board(screenshot, debug=True)
     board = crop_board(screenshot, region, debug=True)
-    detect_turn(board, debug=True)
-    print(board.shape)
+    square_size = board.shape[0] // 8
+    highlighted = detect_turn(board, debug=True)
+    pieces = load_pieces()
+    print(pieces)
     print("Detected board region (x, y, w, h):", region)
