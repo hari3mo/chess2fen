@@ -1,11 +1,14 @@
 import pandas as pd
 import numpy as np
+import chess.engine
+import chess
+import math
 import cv2
 import os
 
-LIGHT_COLOR_BGR = np.array([220, 235, 238])   # cream squares
-DARK_COLOR_BGR  = np.array([100, 155, 115])   # green squares
-HIGHLIGHT_COLOR_LIGHT_BGR = np.array([154, 245, 245])   # yellow highlight for last move
+LIGHT_COLOR_BGR = np.array([220, 235, 238])
+DARK_COLOR_BGR  = np.array([100, 155, 115])
+HIGHLIGHT_COLOR_LIGHT_BGR = np.array([154, 245, 245])
 HIGHLIGHT_COLOR_DARK_BGR = np.array([94, 201, 189])
 
 COLOR_TOLERANCE = 25
@@ -134,13 +137,14 @@ def classify_all_squares(board, templates, debug=False):
             best_score = -1.0
 
             for piece, (template_img, template_mask) in templates.items():
+                std = square.std()
+                if std < 25: # early stopping
+                    continue
                 result = cv2.matchTemplate(square, template_img, cv2.TM_CCOEFF_NORMED, mask=template_mask)
                 score = result[0][0]
                 if score > best_score:
                     best_score = score
                     best_piece = piece
-
-            std = square.std()
 
             if std < EMPTY_THRESHOLD and best_score < MATCH_THRESHOLD:
                 best_piece = None
@@ -153,13 +157,15 @@ def classify_all_squares(board, templates, debug=False):
 
     if debug:
         debug_classification_output(board, grid)
-
+    
+    if is_flipped(grid):
+        grid = [row[::-1] for row in grid[::-1]]
+    
     return grid
 
 
 def build_fen(grid, highlighted=None):
     rank_strings = []
-
     for rank_index in range(8):
         rank_string = ''
         empty_count = 0
@@ -197,6 +203,15 @@ def build_fen(grid, highlighted=None):
 
     return fen
 
+
+def is_flipped(grid):
+    for rank in range(8):
+        for file in range(8):
+            if grid[rank][file] == "wk":
+                return rank < 4
+    return False
+
+
 def determine_active_color(grid, highlighted):
     if highlighted is None:
         return 'w'
@@ -212,11 +227,14 @@ def determine_active_color(grid, highlighted):
     if len(pieces_on_highlights) != 1:
         return 'w'
 
-    last_mover = pieces_on_highlights[0][0]   # 'w' or 'b'
-    return 'b' if last_mover == 'w' else 'w'
+    last_move = pieces_on_highlights[0][0]   # 'w' or 'b'
+    return 'b' if last_move == 'w' else 'w'
 
 
-def determine_castling_rights(grid):
+def determine_castling_rights(grid, orientation='white'):
+    if orientation == 'black':
+        grid = [row[::-1] for row in grid[::-1]]
+    
     rights = ''
 
     white_king_home = grid[7][4] == 'wk'   # e1
@@ -274,11 +292,46 @@ def debug_output(image, filename):
     cv2.imwrite(path, image)
     return path
 
+def render_eval_bar(fen, width=40):
+    board = chess.Board(fen)
+
+    with chess.engine.SimpleEngine.popen_uci('stockfish') as engine:
+        info = engine.analyse(board, chess.engine.Limit(depth=15))
+        score = info["score"].white()
+
+        if score.is_mate():
+            # Convert mate-in-N to a very large number
+            mate_in = score.mate()
+            return 10000 if mate_in > 0 else -10000
+
+    eval = score.score()
+    fraction = 1 / (1 + math.exp(-eval / 400))
+
+    # Position of the fill boundary, from 0 (all black) to width (all white)
+    fill = int(fraction * width)
+    center = width // 2
+
+    bar = list(" " * width)
+
+    # Fill from center outward in the direction of the advantage
+    if fill > center:
+        for i in range(center, fill):
+            bar[i] = "="
+    else:
+        for i in range(fill, center):
+            bar[i] = "="
+
+    bar[center] = "|"
+
+    label = f"{eval / 100:+.2f}"
+    return f"[{''.join(bar)}] {label}"
+
+
+
 
 if __name__ == '__main__':
-    # screenshot = load_screenshot('./templates/starting.png')
-    # screenshot = load_screenshot('ssss.png')
-    screenshot = load_screenshot('test.png')
+    path = input("Drop an image here and press Enter: ").strip()
+    screenshot = load_screenshot(path)
     region = detect_board(screenshot, debug=True)
     print('Detected board region (x, y, w, h):', region)
     board = crop_board(screenshot, region, debug=True)
@@ -286,7 +339,10 @@ if __name__ == '__main__':
     highlighted = detect_turn(board,debug=True)
     pieces = load_pieces()
     grid = classify_all_squares(board, pieces, debug=True)
-    df = pd.DataFrame(grid)
+    df = pd.DataFrame(grid, index=np.arange(8, 0, -1), 
+                      columns=['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'])\
+                        .fillna('*')
     print(df)
     fen = build_fen(grid, highlighted)
     print('FEN:', fen)
+    print(render_eval_bar(fen))
